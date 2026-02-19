@@ -42,7 +42,7 @@ public class TestFixture<TEntryPoint> : IAsyncLifetime
     where TEntryPoint : class
 {
     private readonly WebApplicationFactory<TEntryPoint> _factory;
-    private int Timeout => 120; // Second
+    private int Timeout => 300; // Second
     private ITestHarness TestHarness => ServiceProvider?.GetTestHarness();
     private Action<IServiceCollection> TestRegistrationServices { get; set; }
     private PostgreSqlContainer PostgresTestcontainer;
@@ -140,6 +140,9 @@ public class TestFixture<TEntryPoint> : IAsyncLifetime
         if (ServiceProvider.GetService<ITestHarness>() is { } harness)
         {
             await harness.Start();
+
+            // Add a small delay to ensure harness is ready
+            await Task.Delay(1000);
         }
     }
 
@@ -298,11 +301,24 @@ public class TestFixture<TEntryPoint> : IAsyncLifetime
         MongoDbTestContainer = TestContainers.MongoTestContainer();
         EventStoreDbTestContainer = TestContainers.EventStoreTestContainer();
 
-        await MongoDbTestContainer.StartAsync();
-        await PostgresTestcontainer.StartAsync();
-        await PostgresPersistTestContainer.StartAsync();
+        // Start containers in parallel for speed
+        await Task.WhenAll(
+            MongoDbTestContainer.StartAsync(),
+            PostgresTestcontainer.StartAsync(),
+            PostgresPersistTestContainer.StartAsync(),
+            EventStoreDbTestContainer.StartAsync()
+        );
+
+        // Start RabbitMQ last and wait extra time
         await RabbitMqTestContainer.StartAsync();
-        await EventStoreDbTestContainer.StartAsync();
+        await Task.Delay(5000); // Give RabbitMQ extra time to initialize
+
+        // Verify RabbitMQ is healthy
+        var healthCheck = await RabbitMqTestContainer.ExecAsync(new[] { "rabbitmq-diagnostics", "ping" });
+        if (healthCheck.ExitCode != 0)
+        {
+            await Task.Delay(5000); // Wait more if not healthy
+        }
     }
 
     private async Task StopTestContainerAsync()
