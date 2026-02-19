@@ -38,11 +38,18 @@ public class CompleteRegisterPassengerTests : PassengerIntegrationTestBase
 
     private Task<bool> WaitUntilPassengerCreatedAsync(string passportNumber)
     {
-        return Fixture.WaitUntilAsync(async () =>
-        {
-            return await Fixture.ExecuteDbContextAsync(db =>
-                ValueTask.FromResult(db.Passengers.Any(p => p.PassportNumber.Value == passportNumber))
-            );
-        });
+        var timeout = TimeSpan.FromSeconds(30);
+        var pollInterval = TimeSpan.FromMilliseconds(500);
+
+        return Fixture.WaitUntilAsync(
+            async () =>
+            {
+                return await Fixture.ExecuteDbContextAsync(db =>
+                    ValueTask.FromResult(db.Passengers.Any(p => p.PassportNumber.Value == passportNumber))
+                );
+            },
+            timeout: timeout,
+            pollInterval: pollInterval
+        );
     }
 }
