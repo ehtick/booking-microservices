@@ -136,23 +136,10 @@ public class TestFixture<TEntryPoint> : IAsyncLifetime
     {
         CancellationTokenSource = new CancellationTokenSource();
         await StartTestContainerAsync();
-
-        if (ServiceProvider.GetService<ITestHarness>() is { } harness)
-        {
-            await harness.Start();
-
-            // Add a small delay to ensure harness is ready
-            await Task.Delay(1000);
-        }
     }
 
     public async Task DisposeAsync()
     {
-        if (ServiceProvider.GetService<ITestHarness>() is { } harness)
-        {
-            await harness.Stop();
-        }
-
         await StopTestContainerAsync();
         await _factory.DisposeAsync();
         await CancellationTokenSource.CancelAsync();
@@ -312,13 +299,6 @@ public class TestFixture<TEntryPoint> : IAsyncLifetime
         // Start RabbitMQ last and wait extra time
         await RabbitMqTestContainer.StartAsync();
         await Task.Delay(5000); // Give RabbitMQ extra time to initialize
-
-        // Verify RabbitMQ is healthy
-        var healthCheck = await RabbitMqTestContainer.ExecAsync(new[] { "rabbitmq-diagnostics", "ping" });
-        if (healthCheck.ExitCode != 0)
-        {
-            await Task.Delay(5000); // Wait more if not healthy
-        }
     }
 
     private async Task StopTestContainerAsync()
