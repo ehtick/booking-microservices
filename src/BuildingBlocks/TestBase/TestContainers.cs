@@ -87,25 +87,16 @@ public static class TestContainers
 
     public static RabbitMqContainer RabbitMqTestContainer()
     {
-        var builder = new RabbitMqBuilder()
+        var baseBuilder = new RabbitMqBuilder()
             .WithUsername(RabbitMqContainerConfiguration.UserName)
             .WithPassword(RabbitMqContainerConfiguration.Password)
+            .WithLabel("Key", "Value");
+
+        var builder = baseBuilder
             .WithImage(RabbitMqContainerConfiguration.ImageName)
             .WithName(RabbitMqContainerConfiguration.Name)
             .WithPortBinding(RabbitMqContainerConfiguration.ApiPort, true)
             .WithPortBinding(RabbitMqContainerConfiguration.Port, true)
-            .WithWaitStrategy(
-                Wait.ForUnixContainer()
-                    .UntilHttpRequestIsSucceeded(request =>
-                        request
-                            .ForPort((ushort)RabbitMqContainerConfiguration.ApiPort)
-                            .ForPath("/api/overview")
-                            .WithBasicAuthentication(
-                                RabbitMqContainerConfiguration.UserName,
-                                RabbitMqContainerConfiguration.Password
-                            )
-                    )
-            )
             .Build();
 
         return builder;
