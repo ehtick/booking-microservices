@@ -42,8 +42,8 @@ public class TestFixture<TEntryPoint> : IAsyncLifetime
     where TEntryPoint : class
 {
     private readonly WebApplicationFactory<TEntryPoint> _factory;
-    private int Timeout => 300; // Second
-    private ITestHarness TestHarness => ServiceProvider?.GetTestHarness();
+    private int Timeout => 120; // Second
+    public ITestHarness TestHarness => ServiceProvider?.GetTestHarness();
     private Action<IServiceCollection> TestRegistrationServices { get; set; }
     private PostgreSqlContainer PostgresTestcontainer;
     private PostgreSqlContainer PostgresPersistTestContainer;
@@ -136,10 +136,14 @@ public class TestFixture<TEntryPoint> : IAsyncLifetime
     {
         CancellationTokenSource = new CancellationTokenSource();
         await StartTestContainerAsync();
+
+        await TestHarness.Start();
     }
 
     public async Task DisposeAsync()
     {
+        await TestHarness.Stop();
+
         await StopTestContainerAsync();
         await _factory.DisposeAsync();
         await CancellationTokenSource.CancelAsync();
@@ -201,83 +205,71 @@ public class TestFixture<TEntryPoint> : IAsyncLifetime
     public async Task Publish<TMessage>(TMessage message, CancellationToken cancellationToken = default)
         where TMessage : class, IEvent
     {
+        // Use harness bus to ensure publish happens only after the bus is started.
         await TestHarness.Bus.Publish(message, cancellationToken);
     }
 
     public async Task<bool> WaitForPublishing<TMessage>(CancellationToken cancellationToken = default)
         where TMessage : class, IEvent
     {
-        var result = await WaitUntilConditionMet(async () =>
-        {
-            var published = await TestHarness.Published.Any<TMessage>(cancellationToken);
+        var result = await WaitUntilConditionMet(
+            async () =>
+            {
+                var published = await TestHarness.Published.Any<TMessage>(cancellationToken);
 
-            return published;
-        });
-
-        return result;
-    }
-
-    public async Task<bool> WaitForConsuming<TMessage>(CancellationToken cancellationToken = default)
-        where TMessage : class, IEvent
-    {
-        var result = await WaitUntilConditionMet(async () =>
-        {
-            var consumed = await TestHarness.Consumed.Any<TMessage>(cancellationToken);
-
-            return consumed;
-        });
+                return published;
+            },
+            cancellationToken: cancellationToken
+        );
 
         return result;
     }
 
-    public async Task<bool> ShouldProcessedPersistInternalCommand<TInternalCommand>(
+    public Task<bool> WaitUntilAsync(
+        Func<Task<bool>> condition,
+        TimeSpan? timeout = null,
+        TimeSpan? pollInterval = null,
         CancellationToken cancellationToken = default
     )
-        where TInternalCommand : class, IInternalCommand
     {
-        var result = await WaitUntilConditionMet(async () =>
-        {
-            return await ExecuteScopeAsync(async sp =>
+        var effectiveTimeout = timeout ?? TimeSpan.FromSeconds(Timeout);
+        var effectivePollInterval = pollInterval ?? TimeSpan.FromMilliseconds(200);
+
+        return WaitUntilConditionMet(
+            conditionToMet: async () =>
             {
-                var persistMessageProcessor = sp.GetService<IPersistMessageProcessor>();
-
-                Guard.Against.Null(persistMessageProcessor, nameof(persistMessageProcessor));
-
-                var filter = await persistMessageProcessor.GetByFilterAsync(x =>
-                    x.DeliveryType == MessageDeliveryType.Internal && typeof(TInternalCommand).ToString() == x.DataType
-                );
-
-                var res = filter.Any(x => x.MessageStatus == MessageStatus.Processed);
-
-                return res;
-            });
-        });
-
-        return result;
+                cancellationToken.ThrowIfCancellationRequested();
+                return await condition();
+            },
+            timeoutSecond: (int)Math.Ceiling(effectiveTimeout.TotalSeconds),
+            pollInterval: effectivePollInterval,
+            cancellationToken: cancellationToken
+        );
     }
 
     // Ref: https://tech.energyhelpline.com/in-memory-testing-with-masstransit/
-    private async Task<bool> WaitUntilConditionMet(Func<Task<bool>> conditionToMet, int? timeoutSecond = null)
+    private async Task<bool> WaitUntilConditionMet(
+        Func<Task<bool>> conditionToMet,
+        int? timeoutSecond = null,
+        TimeSpan? pollInterval = null,
+        CancellationToken cancellationToken = default
+    )
     {
         var time = timeoutSecond ?? Timeout;
+        var delay = pollInterval ?? TimeSpan.FromMilliseconds(100);
 
-        var startTime = DateTime.Now;
-        var timeoutExpired = false;
-        var meet = await conditionToMet.Invoke();
-
-        while (!meet)
+        var startTime = DateTime.UtcNow;
+        while (DateTime.UtcNow - startTime <= TimeSpan.FromSeconds(time))
         {
-            if (timeoutExpired)
-            {
-                return false;
-            }
+            cancellationToken.ThrowIfCancellationRequested();
 
-            await Task.Delay(100);
-            meet = await conditionToMet.Invoke();
-            timeoutExpired = DateTime.Now - startTime > TimeSpan.FromSeconds(time);
+            if (await conditionToMet.Invoke())
+                return true;
+
+            await Task.Delay(delay, cancellationToken);
         }
 
-        return true;
+        return false;
     }
 
     private async Task StartTestContainerAsync()
@@ -288,7 +280,6 @@ public class TestFixture<TEntryPoint> : IAsyncLifetime
         MongoDbTestContainer = TestContainers.MongoTestContainer();
         EventStoreDbTestContainer = TestContainers.EventStoreTestContainer();
 
-        // Start containers in parallel for speed
         await Task.WhenAll(
             MongoDbTestContainer.StartAsync(),
             PostgresTestcontainer.StartAsync(),
@@ -296,9 +287,7 @@ public class TestFixture<TEntryPoint> : IAsyncLifetime
             EventStoreDbTestContainer.StartAsync()
         );
 
-        // Start RabbitMQ last and wait extra time
         await RabbitMqTestContainer.StartAsync();
-        await Task.Delay(5000); // Give RabbitMQ extra time to initialize
     }
 
     private async Task StopTestContainerAsync()
@@ -321,7 +310,7 @@ public class TestFixture<TEntryPoint> : IAsyncLifetime
                 new("PostgresOptions:ConnectionString:Identity", PostgresTestcontainer.GetConnectionString()),
                 new("PostgresOptions:ConnectionString:Passenger", PostgresTestcontainer.GetConnectionString()),
                 new("PersistMessageOptions:ConnectionString", PostgresPersistTestContainer.GetConnectionString()),
-                new("RabbitMqOptions:HostName", RabbitMqTestContainer.Hostname),
+                new("RabbitMqOptions:HostName", "127.0.0.1"),
                 new("RabbitMqOptions:UserName", TestContainers.RabbitMqContainerConfiguration.UserName),
                 new("RabbitMqOptions:Password", TestContainers.RabbitMqContainerConfiguration.Password),
                 new(

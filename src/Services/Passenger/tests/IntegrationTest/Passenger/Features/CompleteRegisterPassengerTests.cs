@@ -1,4 +1,3 @@
-using BuildingBlocks.Contracts.EventBus.Messages;
 using BuildingBlocks.TestBase;
 using FluentAssertions;
 using Integration.Test.Fakes;
@@ -21,8 +20,8 @@ public class CompleteRegisterPassengerTests : PassengerIntegrationTestBase
         var userCreated = new FakeUserCreated().Generate();
 
         await Fixture.Publish(userCreated);
-        (await Fixture.WaitForPublishing<UserCreated>()).Should().Be(true);
-        (await Fixture.WaitForConsuming<UserCreated>()).Should().Be(true);
+
+        (await WaitUntilPassengerCreatedAsync(userCreated.PassportNumber)).Should().BeTrue();
 
         var command = new FakeCompleteRegisterPassengerCommand(userCreated.PassportNumber).Generate();
 
@@ -35,5 +34,15 @@ public class CompleteRegisterPassengerTests : PassengerIntegrationTestBase
         response?.PassengerDto?.PassportNumber.Should().Be(command.PassportNumber);
         response?.PassengerDto?.PassengerType.ToString().Should().Be(command.PassengerType.ToString());
         response?.PassengerDto?.Age.Should().Be(command.Age);
+    }
+
+    private Task<bool> WaitUntilPassengerCreatedAsync(string passportNumber)
+    {
+        return Fixture.WaitUntilAsync(async () =>
+        {
+            return await Fixture.ExecuteDbContextAsync(db =>
+                ValueTask.FromResult(db.Passengers.Any(p => p.PassportNumber.Value == passportNumber))
+            );
+        });
     }
 }
