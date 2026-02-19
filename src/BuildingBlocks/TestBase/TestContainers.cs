@@ -1,3 +1,5 @@
+using DotNet.Testcontainers.Builders;
+
 namespace BuildingBlocks.TestBase;
 
 using Testcontainers.EventStoreDb;
@@ -18,15 +20,19 @@ public static class TestContainers
     {
         var configuration = ConfigurationHelper.GetConfiguration();
 
-        RabbitMqContainerConfiguration =
-            configuration.GetOptions<RabbitMqContainerOptions>(nameof(RabbitMqContainerOptions));
-        PostgresContainerConfiguration =
-            configuration.GetOptions<PostgresContainerOptions>(nameof(PostgresContainerOptions));
-        PostgresPersistContainerConfiguration =
-            configuration.GetOptions<PostgresPersistContainerOptions>(nameof(PostgresPersistContainerOptions));
+        RabbitMqContainerConfiguration = configuration.GetOptions<RabbitMqContainerOptions>(
+            nameof(RabbitMqContainerOptions)
+        );
+        PostgresContainerConfiguration = configuration.GetOptions<PostgresContainerOptions>(
+            nameof(PostgresContainerOptions)
+        );
+        PostgresPersistContainerConfiguration = configuration.GetOptions<PostgresPersistContainerOptions>(
+            nameof(PostgresPersistContainerOptions)
+        );
         MongoContainerConfiguration = configuration.GetOptions<MongoContainerOptions>(nameof(MongoContainerOptions));
-        EventStoreContainerConfiguration =
-            configuration.GetOptions<EventStoreContainerOptions>(nameof(EventStoreContainerOptions));
+        EventStoreContainerConfiguration = configuration.GetOptions<EventStoreContainerOptions>(
+            nameof(EventStoreContainerOptions)
+        );
     }
 
     public static PostgreSqlContainer PostgresTestContainer()
@@ -81,16 +87,25 @@ public static class TestContainers
 
     public static RabbitMqContainer RabbitMqTestContainer()
     {
-        var baseBuilder = new RabbitMqBuilder()
+        var builder = new RabbitMqBuilder()
             .WithUsername(RabbitMqContainerConfiguration.UserName)
             .WithPassword(RabbitMqContainerConfiguration.Password)
-            .WithLabel("Key", "Value");
-
-        var builder = baseBuilder
             .WithImage(RabbitMqContainerConfiguration.ImageName)
             .WithName(RabbitMqContainerConfiguration.Name)
             .WithPortBinding(RabbitMqContainerConfiguration.ApiPort, true)
             .WithPortBinding(RabbitMqContainerConfiguration.Port, true)
+            .WithWaitStrategy(
+                Wait.ForUnixContainer()
+                    .UntilHttpRequestIsSucceeded(request =>
+                        request
+                            .ForPort((ushort)RabbitMqContainerConfiguration.ApiPort)
+                            .ForPath("/api/overview")
+                            .WithBasicAuthentication(
+                                RabbitMqContainerConfiguration.UserName,
+                                RabbitMqContainerConfiguration.Password
+                            )
+                    )
+            )
             .Build();
 
         return builder;
@@ -98,8 +113,7 @@ public static class TestContainers
 
     public static EventStoreDbContainer EventStoreTestContainer()
     {
-        var baseBuilder = new EventStoreDbBuilder()
-            .WithLabel("Key", "Value");
+        var baseBuilder = new EventStoreDbBuilder().WithLabel("Key", "Value");
 
         var builder = baseBuilder
             .WithImage(EventStoreContainerConfiguration.ImageName)
