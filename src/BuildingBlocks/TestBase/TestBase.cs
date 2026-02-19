@@ -140,7 +140,6 @@ public class TestFixture<TEntryPoint> : IAsyncLifetime
         if (ServiceProvider.GetService<ITestHarness>() is { } harness)
         {
             await harness.Start();
-            await Task.Delay(1000);
         }
     }
 
