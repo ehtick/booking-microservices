@@ -17,39 +17,24 @@ public class CompleteRegisterPassengerTests : PassengerIntegrationTestBase
     public async Task should_complete_register_passenger_and_update_to_db()
     {
         // Arrange
-        var userCreated = new FakeUserCreated().Generate();
+        var passenger = new FakePassenger().Generate();
 
-        await Fixture.Publish(userCreated);
+        await Fixture.ExecuteDbContextAsync(db =>
+        {
+            db.Passengers.Add(passenger);
+            return db.SaveChangesAsync();
+        });
 
-        (await WaitUntilPassengerCreatedAsync(userCreated.PassportNumber)).Should().BeTrue();
-
-        var command = new FakeCompleteRegisterPassengerCommand(userCreated.PassportNumber).Generate();
+        var command = new FakeCompleteRegisterPassengerCommand(passenger.PassportNumber, passenger.Id).Generate();
 
         // Act
         var response = await Fixture.SendAsync(command);
 
         // Assert
         response.Should().NotBeNull();
-        response?.PassengerDto?.Name.Should().Be(userCreated.Name);
+        response?.PassengerDto?.Name.Should().Be(passenger.Name);
         response?.PassengerDto?.PassportNumber.Should().Be(command.PassportNumber);
         response?.PassengerDto?.PassengerType.ToString().Should().Be(command.PassengerType.ToString());
         response?.PassengerDto?.Age.Should().Be(command.Age);
-    }
-
-    private Task<bool> WaitUntilPassengerCreatedAsync(string passportNumber)
-    {
-        var timeout = TimeSpan.FromSeconds(30);
-        var pollInterval = TimeSpan.FromMilliseconds(500);
-
-        return Fixture.WaitUntilAsync(
-            async () =>
-            {
-                return await Fixture.ExecuteDbContextAsync(db =>
-                    ValueTask.FromResult(db.Passengers.Any(p => p.PassportNumber.Value == passportNumber))
-                );
-            },
-            timeout: timeout,
-            pollInterval: pollInterval
-        );
     }
 }
