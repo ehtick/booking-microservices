@@ -1,6 +1,5 @@
 using System.Net;
 using System.Security.Claims;
-using Ardalis.GuardClauses;
 using BuildingBlocks.Core.Event;
 using BuildingBlocks.Core.Model;
 using BuildingBlocks.EFCore;
@@ -13,7 +12,6 @@ using Grpc.Net.Client;
 using MassTransit;
 using MassTransit.Testing;
 using MediatR;
-using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc.Testing;
@@ -24,7 +22,6 @@ using Microsoft.Extensions.Logging;
 using MongoDB.Driver;
 using NSubstitute;
 using Respawn;
-using Respawn.Graph;
 using WebMotions.Fake.Authentication.JwtBearer;
 using Xunit;
 using Xunit.Abstractions;
@@ -346,32 +343,32 @@ public class TestWriteFixture<TEntryPoint, TWContext> : TestFixture<TEntryPoint>
 {
     public Task ExecuteDbContextAsync(Func<TWContext, Task> action)
     {
-        return ExecuteScopeAsync(sp => action(sp.GetService<TWContext>()));
+        return ExecuteScopeAsync(sp => action(sp.GetRequiredService<TWContext>()));
     }
 
     public Task ExecuteDbContextAsync(Func<TWContext, ValueTask> action)
     {
-        return ExecuteScopeAsync(sp => action(sp.GetService<TWContext>()).AsTask());
+        return ExecuteScopeAsync(sp => action(sp.GetRequiredService<TWContext>()).AsTask());
     }
 
     public Task ExecuteDbContextAsync(Func<TWContext, IMediator, Task> action)
     {
-        return ExecuteScopeAsync(sp => action(sp.GetService<TWContext>(), sp.GetService<IMediator>()));
+        return ExecuteScopeAsync(sp => action(sp.GetRequiredService<TWContext>(), sp.GetRequiredService<IMediator>()));
     }
 
     public Task<T> ExecuteDbContextAsync<T>(Func<TWContext, Task<T>> action)
     {
-        return ExecuteScopeAsync(sp => action(sp.GetService<TWContext>()));
+        return ExecuteScopeAsync(sp => action(sp.GetRequiredService<TWContext>()));
     }
 
     public Task<T> ExecuteDbContextAsync<T>(Func<TWContext, ValueTask<T>> action)
     {
-        return ExecuteScopeAsync(sp => action(sp.GetService<TWContext>()).AsTask());
+        return ExecuteScopeAsync(sp => action(sp.GetRequiredService<TWContext>()).AsTask());
     }
 
     public Task<T> ExecuteDbContextAsync<T>(Func<TWContext, IMediator, Task<T>> action)
     {
-        return ExecuteScopeAsync(sp => action(sp.GetService<TWContext>(), sp.GetService<IMediator>()));
+        return ExecuteScopeAsync(sp => action(sp.GetRequiredService<TWContext>(), sp.GetRequiredService<IMediator>()));
     }
 
     public Task InsertAsync<T>(params T[] entities)

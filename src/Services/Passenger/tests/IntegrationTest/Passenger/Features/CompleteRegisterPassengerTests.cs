@@ -2,6 +2,7 @@ using BuildingBlocks.TestBase;
 using FluentAssertions;
 using Integration.Test.Fakes;
 using Passenger.Data;
+using Passenger.Passengers.ValueObjects;
 using Xunit;
 
 namespace Integration.Test.Passenger.Features;
@@ -17,13 +18,13 @@ public class CompleteRegisterPassengerTests : PassengerIntegrationTestBase
     public async Task should_complete_register_passenger_and_update_to_db()
     {
         // Arrange
-        var passenger = new FakePassenger().Generate();
+        var passenger = global::Passenger.Passengers.Models.Passenger.Create(
+            PassengerId.Of(Guid.CreateVersion7()),
+            Name.Of("Sam"),
+            PassportNumber.Of("123456789")
+        );
 
-        await Fixture.ExecuteDbContextAsync(db =>
-        {
-            db.Passengers.Add(passenger);
-            return db.SaveChangesAsync();
-        });
+        await Fixture.InsertAsync(passenger);
 
         var command = new FakeCompleteRegisterPassengerCommand(passenger.PassportNumber, passenger.Id).Generate();
 
