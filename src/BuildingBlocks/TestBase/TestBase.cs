@@ -133,14 +133,10 @@ public class TestFixture<TEntryPoint> : IAsyncLifetime
     {
         CancellationTokenSource = new CancellationTokenSource();
         await StartTestContainerAsync();
-
-        await TestHarness.Start();
     }
 
     public async Task DisposeAsync()
     {
-        await TestHarness.Stop();
-
         await StopTestContainerAsync();
         await _factory.DisposeAsync();
         await CancellationTokenSource.CancelAsync();
@@ -277,14 +273,11 @@ public class TestFixture<TEntryPoint> : IAsyncLifetime
         MongoDbTestContainer = TestContainers.MongoTestContainer();
         EventStoreDbTestContainer = TestContainers.EventStoreTestContainer();
 
-        await Task.WhenAll(
-            MongoDbTestContainer.StartAsync(),
-            PostgresTestcontainer.StartAsync(),
-            PostgresPersistTestContainer.StartAsync(),
-            EventStoreDbTestContainer.StartAsync()
-        );
-
+        await MongoDbTestContainer.StartAsync();
+        await PostgresTestcontainer.StartAsync();
+        await PostgresPersistTestContainer.StartAsync();
         await RabbitMqTestContainer.StartAsync();
+        await EventStoreDbTestContainer.StartAsync();
     }
 
     private async Task StopTestContainerAsync()
