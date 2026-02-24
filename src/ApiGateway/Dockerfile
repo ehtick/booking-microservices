@@ -8,7 +8,7 @@ COPY ./Directory.Build.props ./
 # Setup working directory for the project
 COPY ./src/BuildingBlocks/BuildingBlocks.csproj ./building-blocks/
 COPY ./src/ApiGateway/src/ApiGateway.csproj ./src/ApiGateway/src/
-
+COPY ./src/Aspire/src/ServiceDefaults/ServiceDefaults.csproj ./src/Aspire/src/ServiceDefaults/
 
 # Restore nuget packages
 RUN dotnet restore ./src/ApiGateway/src/ApiGateway.csproj
@@ -16,6 +16,7 @@ RUN dotnet restore ./src/ApiGateway/src/ApiGateway.csproj
 # Copy project files
 COPY ./src/BuildingBlocks ./src/BuildingBlocks/
 COPY ./src/ApiGateway/src  ./src/ApiGateway/src/
+COPY ./src/Aspire/src/ServiceDefaults/  ./src/Aspire/src/ServiceDefaults/
 
 # Build project with Release configuration
 # and no restore, as we did it already

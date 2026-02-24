@@ -9,7 +9,7 @@ COPY ./Directory.Build.props ./
 COPY ./src/BuildingBlocks/BuildingBlocks.csproj ./src/BuildingBlocks/
 COPY ./src/Services/Passenger/src/Passenger/Passenger.csproj ./src/Services/Passenger/src/Passenger/
 COPY ./src/Services/Passenger/src/Passenger.Api/Passenger.Api.csproj ./src/Services/Passenger/src/Passenger.Api/
-
+COPY ./src/Aspire/src/ServiceDefaults/ServiceDefaults.csproj ./src/Aspire/src/ServiceDefaults/
 
 # Restore nuget packages
 RUN --mount=type=cache,id=passenger_nuget,target=/root/.nuget/packages \
@@ -19,6 +19,7 @@ RUN --mount=type=cache,id=passenger_nuget,target=/root/.nuget/packages \
 COPY ./src/BuildingBlocks ./src/BuildingBlocks/
 COPY ./src/Services/Passenger/src/Passenger/  ./src/Services/Passenger/src/Passenger/
 COPY ./src/Services/Passenger/src/Passenger.Api/  ./src/Services/Passenger/src/Passenger.Api/
+COPY ./src/Aspire/src/ServiceDefaults/  ./src/Aspire/src/ServiceDefaults/
 
 # Build project with Release configuration
 # and no restore, as we did it already
