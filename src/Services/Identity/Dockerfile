@@ -10,6 +10,7 @@ COPY ./Directory.Build.props ./
 COPY ./src/BuildingBlocks/BuildingBlocks.csproj ./src/BuildingBlocks/
 COPY ./src/Services/Identity/src/Identity/Identity.csproj ./src/Services/Identity/src/Identity/
 COPY ./src/Services/Identity/src/Identity.Api/Identity.Api.csproj ./src/Services/Identity/src/Identity.Api/
+COPY ./src/Aspire/src/ServiceDefaults/ServiceDefaults.csproj ./src/Aspire/src/ServiceDefaults/
 
 # Restore nuget packages
 RUN dotnet restore ./src/Services/Identity/src/Identity.Api/Identity.Api.csproj
@@ -18,6 +19,7 @@ RUN dotnet restore ./src/Services/Identity/src/Identity.Api/Identity.Api.csproj
 COPY ./src/BuildingBlocks ./src/BuildingBlocks/
 COPY ./src/Services/Identity/src/Identity/  ./src/Services/Identity/src/Identity/
 COPY ./src/Services/Identity/src/Identity.Api/  ./src/Services/Identity/src/Identity.Api/
+COPY ./src/Aspire/src/ServiceDefaults/  ./src/Aspire/src/ServiceDefaults/
 
 # Build project with Release configuration
 # and no restore, as we did it already

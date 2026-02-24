@@ -9,7 +9,7 @@ COPY ./Directory.Build.props ./
 COPY ./src/BuildingBlocks/BuildingBlocks.csproj ./src/BuildingBlocks/
 COPY ./src/Services/Flight/src/Flight/Flight.csproj ./src/Services/Flight/src/Flight/
 COPY ./src/Services/Flight/src/Flight.Api/Flight.Api.csproj ./src/Services/Flight/src/Flight.Api/
-
+COPY ./src/Aspire/src/ServiceDefaults/ServiceDefaults.csproj ./src/Aspire/src/ServiceDefaults/
 
 # Restore nuget packages
 RUN dotnet restore ./src/Services/Flight/src/Flight.Api/Flight.Api.csproj
@@ -18,6 +18,7 @@ RUN dotnet restore ./src/Services/Flight/src/Flight.Api/Flight.Api.csproj
 COPY ./src/BuildingBlocks ./src/BuildingBlocks/
 COPY ./src/Services/Flight/src/Flight/  ./src/Services/Flight/src/Flight/
 COPY ./src/Services/Flight/src/Flight.Api/  ./src/Services/Flight/src/Flight.Api/
+COPY ./src/Aspire/src/ServiceDefaults/  ./src/Aspire/src/ServiceDefaults/
 
 # Build project with Release configuration
 # and no restore, as we did it already

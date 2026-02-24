@@ -9,7 +9,7 @@ COPY ./Directory.Build.props ./
 COPY ./src/BuildingBlocks/BuildingBlocks.csproj ./src/BuildingBlocks/
 COPY ./src/Services/Booking/src/Booking/Booking.csproj ./src/Services/Booking/src/Booking/
 COPY ./src/Services/Booking/src/Booking.Api/Booking.Api.csproj ./src/Services/Booking/src/Booking.Api/
-
+COPY ./src/Aspire/src/ServiceDefaults/ServiceDefaults.csproj ./src/Aspire/src/ServiceDefaults/
 
 # Restore nuget packages
 RUN --mount=type=cache,id=booking_nuget,target=/root/.nuget/packages \
@@ -19,6 +19,7 @@ RUN --mount=type=cache,id=booking_nuget,target=/root/.nuget/packages \
 COPY ./src/BuildingBlocks ./src/BuildingBlocks/
 COPY ./src/Services/Booking/src/Booking/  ./src/Services/Booking/src/Booking/
 COPY ./src/Services/Booking/src/Booking.Api/  ./src/Services/Booking/src/Booking.Api/
+COPY ./src/Aspire/src/ServiceDefaults/  ./src/Aspire/src/ServiceDefaults/
 
 # Build project with Release configuration
 # and no restore, as we did it already
