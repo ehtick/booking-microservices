@@ -1,46 +1,38 @@
-FROM mcr.microsoft.com/dotnet/sdk:10.0 AS builder
-WORKDIR /
+# ---------- Build Stage ----------
+FROM mcr.microsoft.com/dotnet/sdk:10.0 AS build
+WORKDIR /src
 
-COPY ./.editorconfig ./
-COPY ./global.json ./
-COPY ./Directory.Build.props ./
+# Copy solution-level files
+COPY .editorconfig .
+COPY global.json .
+COPY Directory.Build.props .
 
-# Setup working directory for the project
-COPY ./src/BuildingBlocks/BuildingBlocks.csproj ./building-blocks/
-COPY ./src/ApiGateway/src/ApiGateway.csproj ./src/ApiGateway/src/
-COPY ./src/Aspire/src/ServiceDefaults/ServiceDefaults.csproj ./src/Aspire/src/ServiceDefaults/
+# Copy project files first (better Docker caching)
+COPY src/BuildingBlocks/BuildingBlocks.csproj src/BuildingBlocks/
+COPY src/ApiGateway/src/ApiGateway.csproj src/ApiGateway/src/
+COPY src/Aspire/src/ServiceDefaults/ServiceDefaults.csproj src/Aspire/src/ServiceDefaults/
 
-# Restore nuget packages
-RUN dotnet restore ./src/ApiGateway/src/ApiGateway.csproj
+# Restore dependencies
+RUN dotnet restore src/ApiGateway/src/ApiGateway.csproj
 
-# Copy project files
-COPY ./src/BuildingBlocks ./src/BuildingBlocks/
-COPY ./src/ApiGateway/src  ./src/ApiGateway/src/
-COPY ./src/Aspire/src/ServiceDefaults/  ./src/Aspire/src/ServiceDefaults/
+# Copy the rest of the source code
+COPY src ./src
 
-# Build project with Release configuration
-# and no restore, as we did it already
+# Publish (build included)
+RUN dotnet publish src/ApiGateway/src/ApiGateway.csproj \
+    -c Release \
+    -o /app/publish \
+    --no-restore
 
-RUN ls
-RUN dotnet build  -c Release --no-restore ./src/ApiGateway/src/ApiGateway.csproj
+# ---------- Runtime Stage ----------
+FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS runtime
+WORKDIR /app
 
-WORKDIR /src/ApiGateway/src
+COPY --from=build /app/publish .
 
-# Publish project to output folder
-# and no build, as we did it already
-RUN dotnet publish -c Release --no-build -o out
-
-FROM mcr.microsoft.com/dotnet/aspnet:10.0
-
-# Setup working directory for the project
-WORKDIR /
-COPY --from=builder /src/ApiGateway/src/out  .
-
-ENV ASPNETCORE_URLS https://*:443, http://*:80
-ENV ASPNETCORE_ENVIRONMENT docker
+ENV ASPNETCORE_URLS=http://+:80
+ENV ASPNETCORE_ENVIRONMENT=docker
 
 EXPOSE 80
-EXPOSE 443
 
 ENTRYPOINT ["dotnet", "ApiGateway.dll"]
-
