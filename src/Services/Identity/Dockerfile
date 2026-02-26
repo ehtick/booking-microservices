@@ -1,49 +1,39 @@
-FROM mcr.microsoft.com/dotnet/sdk:10.0 AS builder
+# ---------- Build Stage ----------
+FROM mcr.microsoft.com/dotnet/sdk:10.0 AS build
+WORKDIR /src
 
-# Setup working directory for the project
-WORKDIR /
+# Copy solution-level files
+COPY .editorconfig .
+COPY global.json .
+COPY Directory.Build.props .
 
-COPY ./.editorconfig ./
-COPY ./global.json ./
-COPY ./Directory.Build.props ./
+# Copy project files first (for better Docker layer caching)
+COPY src/BuildingBlocks/BuildingBlocks.csproj src/BuildingBlocks/
+COPY src/Services/Identity/src/Identity/Identity.csproj src/Services/Identity/src/Identity/
+COPY src/Services/Identity/src/Identity.Api/Identity.Api.csproj src/Services/Identity/src/Identity.Api/
+COPY src/Aspire/src/ServiceDefaults/ServiceDefaults.csproj src/Aspire/src/ServiceDefaults/
 
-COPY ./src/BuildingBlocks/BuildingBlocks.csproj ./src/BuildingBlocks/
-COPY ./src/Services/Identity/src/Identity/Identity.csproj ./src/Services/Identity/src/Identity/
-COPY ./src/Services/Identity/src/Identity.Api/Identity.Api.csproj ./src/Services/Identity/src/Identity.Api/
-COPY ./src/Aspire/src/ServiceDefaults/ServiceDefaults.csproj ./src/Aspire/src/ServiceDefaults/
+# Restore dependencies
+RUN dotnet restore src/Services/Identity/src/Identity.Api/Identity.Api.csproj
 
-# Restore nuget packages
-RUN dotnet restore ./src/Services/Identity/src/Identity.Api/Identity.Api.csproj
+# Copy remaining source code
+COPY src ./src
 
-# Copy project files
-COPY ./src/BuildingBlocks ./src/BuildingBlocks/
-COPY ./src/Services/Identity/src/Identity/  ./src/Services/Identity/src/Identity/
-COPY ./src/Services/Identity/src/Identity.Api/  ./src/Services/Identity/src/Identity.Api/
-COPY ./src/Aspire/src/ServiceDefaults/  ./src/Aspire/src/ServiceDefaults/
+# Publish (build included, no separate build step needed)
+RUN dotnet publish src/Services/Identity/src/Identity.Api/Identity.Api.csproj \
+    -c Release \
+    -o /app/publish \
+    --no-restore
 
-# Build project with Release configuration
-# and no restore, as we did it already
+# ---------- Runtime Stage ----------
+FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS runtime
+WORKDIR /app
 
-RUN ls
-RUN dotnet build  -c Release --no-restore ./src/Services/Identity/src/Identity.Api/Identity.Api.csproj
+COPY --from=build /app/publish .
 
-WORKDIR /src/Services/Identity/src/Identity.Api
-
-# Publish project to output folder
-# and no build, as we did it already
-RUN dotnet publish -c Release --no-build -o out
-
-FROM mcr.microsoft.com/dotnet/aspnet:10.0
-
-# Setup working directory for the project
-WORKDIR /
-COPY --from=builder /src/Services/Identity/src/Identity.Api/out  .
-
-ENV ASPNETCORE_URLS https://*:443, http://*:80
-ENV ASPNETCORE_ENVIRONMENT docker
+ENV ASPNETCORE_URLS=http://+:80
+ENV ASPNETCORE_ENVIRONMENT=docker
 
 EXPOSE 80
-EXPOSE 443
 
 ENTRYPOINT ["dotnet", "Identity.Api.dll"]
-

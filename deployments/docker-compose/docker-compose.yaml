@@ -355,7 +355,7 @@ services:
       args:
         Version: "1"
       context: ../../
-      dockerfile: src/ApiGateway/dev.Dockerfile
+      dockerfile: src/ApiGateway/Dockerfile
     container_name: api-gateway
     ports:
       - "5001:80"
@@ -382,7 +382,7 @@ services:
       args:
         Version: "1"
       context: ../../
-      dockerfile: src/Services/Flight/dev.Dockerfile
+      dockerfile: src/Services/Flight/Dockerfile
     container_name: flight
     ports:
       - 5004:80
@@ -408,7 +408,7 @@ services:
       args:
         Version: "1"
       context: ../../
-      dockerfile: src/Services/Identity/dev.Dockerfile
+      dockerfile: src/Services/Identity/Dockerfile
     container_name: identity
     ports:
       - 6005:80
@@ -435,7 +435,7 @@ services:
       args:
         Version: "1"
       context: ../../
-      dockerfile: src/Services/Passenger/dev.Dockerfile
+      dockerfile: src/Services/Passenger/Dockerfile
     container_name: passenger
     ports:
       - 6012:80
@@ -462,7 +462,7 @@ services:
       args:
         Version: "1"
       context: ../../
-      dockerfile: src/Services/Booking/dev.Dockerfile
+      dockerfile: src/Services/Booking/Dockerfile
     container_name: booking
     ports:
       - 6010:80
