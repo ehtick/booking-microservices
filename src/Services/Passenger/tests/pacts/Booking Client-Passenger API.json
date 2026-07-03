@@ -1,0 +1,59 @@
+{
+  "consumer": {
+    "name": "Booking Client"
+  },
+  "interactions": [
+    {
+      "description": "A request to retrieve a passenger by id",
+      "pending": false,
+      "providerStates": [
+        {
+          "name": "There is a passenger with id 11111111-1111-1111-1111-111111111111"
+        }
+      ],
+      "request": {
+        "headers": {
+          "Authorization": [
+            "Bearer contract-test-token"
+          ]
+        },
+        "method": "GET",
+        "path": "/api/v1/passenger/11111111-1111-1111-1111-111111111111"
+      },
+      "response": {
+        "body": {
+          "content": {
+            "passengerDto": {
+              "age": 29,
+              "id": "11111111-1111-1111-1111-111111111111",
+              "name": "Sam Smith",
+              "passengerType": "Male",
+              "passportNumber": "P123456789"
+            }
+          },
+          "contentType": "application/json",
+          "encoded": false
+        },
+        "headers": {
+          "Content-Type": [
+            "application/json; charset=utf-8"
+          ]
+        },
+        "status": 200
+      },
+      "type": "Synchronous/HTTP"
+    }
+  ],
+  "metadata": {
+    "pactRust": {
+      "ffi": "0.4.27",
+      "models": "1.2.8"
+    },
+    "pactSpecification": {
+      "version": "4.0"
+    }
+  },
+  "provider": {
+    "name": "Passenger API"
+  }
+}

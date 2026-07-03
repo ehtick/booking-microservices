@@ -35,7 +35,7 @@ if (builder.ExecutionContext.IsPublishMode)
 var flightDb = postgres.AddDatabase("flight");
 var passengerDb = postgres.AddDatabase("passenger");
 var identityDb = postgres.AddDatabase("identity");
-var persistMessageDb = postgres.AddDatabase("persist-message");
+var persistMessageDb = postgres.AddDatabase("wolverine");
 
 var mongoUsername = builder.AddParameter("mongo-username", "root", secret: true);
 var mongoPassword = builder.AddParameter("mongo-password", "secret", secret: true);
@@ -352,14 +352,6 @@ var booking = builder.AddProject<Projects.Booking_Api>("booking-service")
     .WithHttpsEndpoint(port: 5010, name: "booking-https");
 
 var gateway = builder.AddProject<Projects.ApiGateway>("api-gateway")
-    .WithReference(flight)
-    .WaitFor(flight)
-    .WithReference(passenger)
-    .WaitFor(passenger)
-    .WithReference(identity)
-    .WaitFor(identity)
-    .WithReference(booking)
-    .WaitFor(booking)
     .WithHttpEndpoint(port: 5001, name: "gateway-http")
     .WithHttpsEndpoint(port: 5000, name: "gateway-https");
 

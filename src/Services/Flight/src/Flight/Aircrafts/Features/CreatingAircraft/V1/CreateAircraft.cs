@@ -15,7 +15,6 @@ using Flight.Aircrafts.ValueObjects;
 using FluentValidation;
 using Mapster;
 using MapsterMapper;
-using MassTransit;
 using MediatR;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;

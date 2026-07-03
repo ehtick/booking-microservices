@@ -1,9 +1,8 @@
 using BuildingBlocks.Core;
 using BuildingBlocks.EFCore;
 using BuildingBlocks.Mapster;
-using BuildingBlocks.MassTransit;
+using BuildingBlocks.Wolverine;
 using BuildingBlocks.OpenApi;
-using BuildingBlocks.PersistMessageProcessor;
 using BuildingBlocks.ProblemDetails;
 using BuildingBlocks.Web;
 using Figgle;
@@ -44,7 +43,6 @@ public static class InfrastructureExtensions
 
         builder.Services.AddEndpointsApiExplorer();
         builder.Services.AddControllers();
-        builder.AddPersistMessageProcessor();
         builder.AddCustomDbContext<IdentityContext>(nameof(Identity));
         builder.Services.AddScoped<IDataSeeder, IdentityDataSeeder>();
         builder.Services.AddAspnetOpenApi();
@@ -54,7 +52,7 @@ public static class InfrastructureExtensions
         builder.Services.AddProblemDetails();
         builder.Services.AddCustomMapster(typeof(IdentityRoot).Assembly);
 
-        builder.Services.AddCustomMassTransit(env, TransportType.RabbitMq, typeof(IdentityRoot).Assembly);
+        builder.AddCustomWolverine(env, TransportType.RabbitMq, nameof(Identity), typeof(IdentityRoot).Assembly);
 
         builder.AddCustomIdentityServer();
 
@@ -85,7 +83,11 @@ public static class InfrastructureExtensions
         app.UseMigration<IdentityContext>();
         app.UseIdentityServer();
 
-        app.MapGet("/", x => x.Response.WriteAsync(appOptions.Name));
+        app.MapGet("/", async x =>
+        {
+            x.Response.ContentType = "text/plain;charset=utf-8";
+            await x.Response.WriteAsync(appOptions.Name);
+        });
 
         if (env.IsDevelopment())
         {

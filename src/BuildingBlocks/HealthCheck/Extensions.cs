@@ -1,6 +1,6 @@
 using BuildingBlocks.EFCore;
 using BuildingBlocks.EventStoreDB;
-using BuildingBlocks.MassTransit;
+using BuildingBlocks.Wolverine;
 using BuildingBlocks.Mongo;
 using BuildingBlocks.Web;
 using Microsoft.AspNetCore.Builder;

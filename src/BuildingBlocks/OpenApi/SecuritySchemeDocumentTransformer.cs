@@ -1,6 +1,8 @@
 using Microsoft.AspNetCore.OpenApi;
 using Microsoft.OpenApi;
 
+namespace BuildingBlocks.OpenApi;
+
 public class SecuritySchemeDocumentTransformer : IOpenApiDocumentTransformer
 {
     public Task TransformAsync(

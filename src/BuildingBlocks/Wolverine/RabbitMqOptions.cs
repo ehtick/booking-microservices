@@ -1,4 +1,4 @@
-namespace BuildingBlocks.MassTransit;
+namespace BuildingBlocks.Wolverine;
 
 public class RabbitMqOptions
 {

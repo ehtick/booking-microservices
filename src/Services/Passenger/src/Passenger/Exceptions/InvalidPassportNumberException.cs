@@ -1,10 +1,9 @@
-using SmartCharging.Infrastructure.Exceptions;
+using BuildingBlocks.Exception;
 
 namespace Passenger.Exceptions;
 
 public class InvalidPassportNumberException : DomainException
 {
-    public InvalidPassportNumberException() : base("Passport number cannot be empty or whitespace.")
-    {
-    }
+    public InvalidPassportNumberException()
+        : base("Passport number cannot be empty or whitespace.") { }
 }

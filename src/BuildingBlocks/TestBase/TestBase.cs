@@ -4,13 +4,10 @@ using BuildingBlocks.Core.Event;
 using BuildingBlocks.Core.Model;
 using BuildingBlocks.EFCore;
 using BuildingBlocks.Mongo;
-using BuildingBlocks.PersistMessageProcessor;
 using BuildingBlocks.Web;
 using Duende.IdentityServer.EntityFramework.Entities;
 using EasyNetQ.Management.Client;
 using Grpc.Net.Client;
-using MassTransit;
-using MassTransit.Testing;
 using MediatR;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Http;
@@ -18,6 +15,7 @@ using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using MongoDB.Driver;
 using NSubstitute;
@@ -34,23 +32,25 @@ using Testcontainers.EventStoreDb;
 using Testcontainers.MongoDb;
 using Testcontainers.PostgreSql;
 using Testcontainers.RabbitMq;
+using global::Wolverine;
+using global::Wolverine.Tracking;
 
 public class TestFixture<TEntryPoint> : IAsyncLifetime
     where TEntryPoint : class
 {
     private readonly WebApplicationFactory<TEntryPoint> _factory;
+    private readonly SemaphoreSlim _initializationLock = new(1, 1);
+    private readonly Dictionary<string, string?> _originalEnvironmentVariables = new(StringComparer.OrdinalIgnoreCase);
+    private ITrackedSession _lastTrackedSession;
+    private Dictionary<string, int> _outgoingEnvelopeCountsBeforeLastAction = new(StringComparer.Ordinal);
+    private bool _initialized;
     private int Timeout => 120; // Second
-    public ITestHarness TestHarness => ServiceProvider?.GetTestHarness();
     private Action<IServiceCollection> TestRegistrationServices { get; set; }
     private PostgreSqlContainer PostgresTestcontainer;
-    private PostgreSqlContainer PostgresPersistTestContainer;
     public RabbitMqContainer RabbitMqTestContainer;
     public MongoDbContainer MongoDbTestContainer;
     public EventStoreDbContainer EventStoreDbTestContainer;
     public CancellationTokenSource CancellationTokenSource;
-
-    public PersistMessageBackgroundService PersistMessageBackgroundService =>
-        ServiceProvider.GetRequiredService<PersistMessageBackgroundService>();
 
     public HttpClient HttpClient
     {
@@ -76,6 +76,8 @@ public class TestFixture<TEntryPoint> : IAsyncLifetime
     public IConfiguration Configuration => _factory?.Services.GetRequiredService<IConfiguration>();
     public ILogger Logger { get; set; }
 
+    internal string GetPostgresConnectionString() => PostgresTestcontainer.GetConnectionString();
+
     protected TestFixture()
     {
         _factory = new WebApplicationFactory<TEntryPoint>().WithWebHostBuilder(builder =>
@@ -88,9 +90,6 @@ public class TestFixture<TEntryPoint> : IAsyncLifetime
             {
                 TestRegistrationServices?.Invoke(services);
                 services.ReplaceSingleton(AddHttpContextAccessorMock);
-
-                services.AddSingleton<PersistMessageBackgroundService>();
-                services.RemoveHostedService<PersistMessageBackgroundService>();
 
                 // Register all ITestDataSeeder implementations dynamically
                 services.Scan(scan =>
@@ -131,15 +130,42 @@ public class TestFixture<TEntryPoint> : IAsyncLifetime
 
     public async Task InitializeAsync()
     {
-        CancellationTokenSource = new CancellationTokenSource();
-        await StartTestContainerAsync();
+        await EnsureInitializedAsync();
     }
 
     public async Task DisposeAsync()
     {
+        if (!_initialized)
+            return;
+
         await StopTestContainerAsync();
         await _factory.DisposeAsync();
         await CancellationTokenSource.CancelAsync();
+        RestoreEnvironmentVariables();
+    }
+
+    internal async Task EnsureInitializedAsync()
+    {
+        if (_initialized)
+            return;
+
+        await _initializationLock.WaitAsync();
+
+        try
+        {
+            if (_initialized)
+                return;
+
+            CancellationTokenSource = new CancellationTokenSource();
+            await StartTestContainerAsync();
+            ApplyTestEnvironmentVariables();
+            await EnsureTestDatabasesExistAsync();
+            _initialized = true;
+        }
+        finally
+        {
+            _initializationLock.Release();
+        }
     }
 
     public virtual void RegisterServices(Action<IServiceCollection> services)
@@ -178,44 +204,117 @@ public class TestFixture<TEntryPoint> : IAsyncLifetime
 
     public Task<TResponse> SendAsync<TResponse>(IRequest<TResponse> request)
     {
-        return ExecuteScopeAsync(sp =>
+        return ExecuteScopeAsync(async sp =>
         {
             var mediator = sp.GetRequiredService<IMediator>();
+            await CaptureOutgoingEnvelopeCountsAsync();
 
-            return mediator.Send(request);
+            TResponse response = default;
+            _lastTrackedSession = await sp.TrackActivity()
+                .Timeout(TimeSpan.FromSeconds(Timeout))
+                .ExecuteAndWaitAsync((Func<IMessageContext, Task>)(async _ => { response = await mediator.Send(request); }));
+
+            return response;
         });
     }
 
     public Task SendAsync(IRequest request)
     {
-        return ExecuteScopeAsync(sp =>
+        return ExecuteScopeAsync(async sp =>
         {
             var mediator = sp.GetRequiredService<IMediator>();
-            return mediator.Send(request);
+            await CaptureOutgoingEnvelopeCountsAsync();
+            _lastTrackedSession = await sp.TrackActivity()
+                .Timeout(TimeSpan.FromSeconds(Timeout))
+                .ExecuteAndWaitAsync((Func<IMessageContext, Task>)(async _ => { await mediator.Send(request); }));
         });
     }
 
     public async Task Publish<TMessage>(TMessage message, CancellationToken cancellationToken = default)
         where TMessage : class, IEvent
     {
-        // Use harness bus to ensure publish happens only after the bus is started.
-        await TestHarness.Bus.Publish(message, cancellationToken);
+        await ExecuteScopeAsync(async sp =>
+        {
+            var bus = sp.GetRequiredService<IMessageBus>();
+            await CaptureOutgoingEnvelopeCountsAsync();
+            _lastTrackedSession = await sp.TrackActivity()
+                .Timeout(TimeSpan.FromSeconds(Timeout))
+                .ExecuteAndWaitAsync((Func<IMessageContext, Task>)(async _ =>
+                {
+                    cancellationToken.ThrowIfCancellationRequested();
+                    await bus.PublishAsync(message);
+                }));
+        });
     }
 
     public async Task<bool> WaitForPublishing<TMessage>(CancellationToken cancellationToken = default)
         where TMessage : class, IEvent
     {
-        var result = await WaitUntilConditionMet(
-            async () =>
+        cancellationToken.ThrowIfCancellationRequested();
+        var baselineCount = GetTrackedMessageCount(typeof(TMessage), _outgoingEnvelopeCountsBeforeLastAction);
+
+        return await WaitUntilAsync(async () =>
+        {
+            var currentCounts = await ReadOutgoingEnvelopeCountsAsync(cancellationToken);
+            if (GetTrackedMessageCount(typeof(TMessage), currentCounts) > baselineCount)
             {
-                var published = await TestHarness.Published.Any<TMessage>(cancellationToken);
+                return true;
+            }
 
-                return published;
-            },
-            cancellationToken: cancellationToken
-        );
+            return _lastTrackedSession is not null
+                   && _lastTrackedSession.Sent.AllMessages().OfType<TMessage>().Any();
+        }, cancellationToken: cancellationToken);
+    }
 
-        return result;
+    private async Task CaptureOutgoingEnvelopeCountsAsync(CancellationToken cancellationToken = default)
+    {
+        _outgoingEnvelopeCountsBeforeLastAction = await ReadOutgoingEnvelopeCountsAsync(cancellationToken);
+    }
+
+    private async Task<Dictionary<string, int>> ReadOutgoingEnvelopeCountsAsync(CancellationToken cancellationToken = default)
+    {
+        if (PostgresTestcontainer is null)
+        {
+            return new Dictionary<string, int>(StringComparer.Ordinal);
+        }
+
+        try
+        {
+            await using var connection = new NpgsqlConnection(PostgresTestcontainer.GetConnectionString());
+            await connection.OpenAsync(cancellationToken);
+
+            const string sql = """
+                               select message_type, count(*)
+                               from wolverine.wolverine_outgoing_envelopes
+                               group by message_type
+                               """;
+
+            await using var command = new NpgsqlCommand(sql, connection);
+            await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+
+            var counts = new Dictionary<string, int>(StringComparer.Ordinal);
+            while (await reader.ReadAsync(cancellationToken))
+            {
+                counts[reader.GetString(0)] = reader.GetInt32(1);
+            }
+
+            return counts;
+        }
+        catch (PostgresException ex) when (ex.SqlState == PostgresErrorCodes.InvalidSchemaName || ex.SqlState == PostgresErrorCodes.UndefinedTable)
+        {
+            return new Dictionary<string, int>(StringComparer.Ordinal);
+        }
+    }
+
+    private static int GetTrackedMessageCount(Type messageType, IReadOnlyDictionary<string, int> counts)
+    {
+        var fullName = messageType.FullName;
+        var shortName = messageType.Name;
+
+        return counts
+            .Where(pair => pair.Key.Contains(fullName ?? shortName, StringComparison.Ordinal)
+                           || pair.Key.EndsWith(shortName, StringComparison.Ordinal))
+            .Sum(pair => pair.Value);
     }
 
     public Task<bool> WaitUntilAsync(
@@ -240,7 +339,7 @@ public class TestFixture<TEntryPoint> : IAsyncLifetime
         );
     }
 
-    // Ref: https://tech.energyhelpline.com/in-memory-testing-with-masstransit/
+    // Ref: https://tech.energyhelpline.com/in-memory-testing-with-message-brokers/
     private async Task<bool> WaitUntilConditionMet(
         Func<Task<bool>> conditionToMet,
         int? timeoutSecond = null,
@@ -268,38 +367,120 @@ public class TestFixture<TEntryPoint> : IAsyncLifetime
     private async Task StartTestContainerAsync()
     {
         PostgresTestcontainer = TestContainers.PostgresTestContainer();
-        PostgresPersistTestContainer = TestContainers.PostgresPersistTestContainer();
         RabbitMqTestContainer = TestContainers.RabbitMqTestContainer();
         MongoDbTestContainer = TestContainers.MongoTestContainer();
         EventStoreDbTestContainer = TestContainers.EventStoreTestContainer();
 
         await MongoDbTestContainer.StartAsync();
         await PostgresTestcontainer.StartAsync();
-        await PostgresPersistTestContainer.StartAsync();
         await RabbitMqTestContainer.StartAsync();
         await EventStoreDbTestContainer.StartAsync();
     }
 
     private async Task StopTestContainerAsync()
     {
-        await PostgresTestcontainer.StopAsync();
-        await PostgresPersistTestContainer.StopAsync();
-        await RabbitMqTestContainer.StopAsync();
-        await MongoDbTestContainer.StopAsync();
-        await EventStoreDbTestContainer.StopAsync();
+        if (PostgresTestcontainer is not null)
+            await PostgresTestcontainer.StopAsync();
+
+        if (RabbitMqTestContainer is not null)
+            await RabbitMqTestContainer.StopAsync();
+
+        if (MongoDbTestContainer is not null)
+            await MongoDbTestContainer.StopAsync();
+
+        if (EventStoreDbTestContainer is not null)
+            await EventStoreDbTestContainer.StopAsync();
+    }
+
+    private async Task EnsureTestDatabasesExistAsync()
+    {
+        await EnsureDatabasesExistAsync(
+            PostgresTestcontainer.GetConnectionString(),
+            ["booking_test", "flight_test", "identity_test", "passenger_test"]);
+    }
+
+    private static async Task EnsureDatabasesExistAsync(string connectionString, IEnumerable<string> databaseNames)
+    {
+        var connectionStringBuilder = new NpgsqlConnectionStringBuilder(connectionString)
+        {
+            Database = "postgres"
+        };
+
+        await using var connection = new NpgsqlConnection(connectionStringBuilder.ConnectionString);
+        await connection.OpenAsync();
+
+        foreach (var databaseName in databaseNames.Distinct(StringComparer.OrdinalIgnoreCase))
+        {
+            await using var command = connection.CreateCommand();
+            command.CommandText =
+                $"CREATE DATABASE \"{databaseName.Replace("\"", "\"\"", StringComparison.Ordinal)}\"";
+
+            try
+            {
+                await command.ExecuteNonQueryAsync();
+            }
+            catch (PostgresException exception) when (exception.SqlState == PostgresErrorCodes.DuplicateDatabase)
+            {
+            }
+        }
+    }
+
+    private void ApplyTestEnvironmentVariables()
+    {
+        var postgresConnectionString = PostgresTestcontainer.GetConnectionString();
+
+        SetEnvironmentVariable("ConnectionStrings__postgres", postgresConnectionString);
+        SetEnvironmentVariable("ConnectionStrings__wolverine", postgresConnectionString);
+        SetEnvironmentVariable("ConnectionStrings__booking", postgresConnectionString);
+        SetEnvironmentVariable("ConnectionStrings__flight", postgresConnectionString);
+        SetEnvironmentVariable("ConnectionStrings__identity", postgresConnectionString);
+        SetEnvironmentVariable("ConnectionStrings__passenger", postgresConnectionString);
+        SetEnvironmentVariable("PostgresOptions__ConnectionString", postgresConnectionString);
+        SetEnvironmentVariable("PostgresOptions__ConnectionString__Booking", postgresConnectionString);
+        SetEnvironmentVariable("PostgresOptions__ConnectionString__Flight", postgresConnectionString);
+        SetEnvironmentVariable("PostgresOptions__ConnectionString__Identity", postgresConnectionString);
+        SetEnvironmentVariable("PostgresOptions__ConnectionString__Passenger", postgresConnectionString);
+    }
+
+    private void SetEnvironmentVariable(string key, string value)
+    {
+        if (!_originalEnvironmentVariables.ContainsKey(key))
+        {
+            _originalEnvironmentVariables[key] = Environment.GetEnvironmentVariable(key);
+        }
+
+        Environment.SetEnvironmentVariable(key, value);
+    }
+
+    private void RestoreEnvironmentVariables()
+    {
+        foreach (var pair in _originalEnvironmentVariables)
+        {
+            Environment.SetEnvironmentVariable(pair.Key, pair.Value);
+        }
+
+        _originalEnvironmentVariables.Clear();
     }
 
     private void AddCustomAppSettings(IConfigurationBuilder configuration)
     {
+        var postgresConnectionString = PostgresTestcontainer.GetConnectionString();
+
         //todo: provide better approach for reading `PostgresOptions`
         configuration.AddInMemoryCollection(
             new KeyValuePair<string, string>[]
             {
-                new("PostgresOptions:ConnectionString", PostgresTestcontainer.GetConnectionString()),
-                new("PostgresOptions:ConnectionString:Flight", PostgresTestcontainer.GetConnectionString()),
-                new("PostgresOptions:ConnectionString:Identity", PostgresTestcontainer.GetConnectionString()),
-                new("PostgresOptions:ConnectionString:Passenger", PostgresTestcontainer.GetConnectionString()),
-                new("PersistMessageOptions:ConnectionString", PostgresPersistTestContainer.GetConnectionString()),
+                new("ConnectionStrings:postgres", postgresConnectionString),
+                new("ConnectionStrings:wolverine", postgresConnectionString),
+                new("ConnectionStrings:booking", postgresConnectionString),
+                new("ConnectionStrings:flight", postgresConnectionString),
+                new("ConnectionStrings:identity", postgresConnectionString),
+                new("ConnectionStrings:passenger", postgresConnectionString),
+                new("PostgresOptions:ConnectionString", postgresConnectionString),
+                new("PostgresOptions:ConnectionString:Booking", postgresConnectionString),
+                new("PostgresOptions:ConnectionString:Flight", postgresConnectionString),
+                new("PostgresOptions:ConnectionString:Identity", postgresConnectionString),
+                new("PostgresOptions:ConnectionString:Passenger", postgresConnectionString),
                 new("RabbitMqOptions:HostName", "127.0.0.1"),
                 new("RabbitMqOptions:UserName", TestContainers.RabbitMqContainerConfiguration.UserName),
                 new("RabbitMqOptions:Password", TestContainers.RabbitMqContainerConfiguration.Password),
@@ -505,9 +686,7 @@ public class TestFixtureCore<TEntryPoint> : IAsyncLifetime
     where TEntryPoint : class
 {
     private Respawner _reSpawnerDefaultDb;
-    private Respawner _reSpawnerPersistDb;
     private NpgsqlConnection DefaultDbConnection { get; set; }
-    private NpgsqlConnection PersistDbConnection { get; set; }
     private Type _dbContextType;
 
     public TestFixtureCore(
@@ -526,6 +705,7 @@ public class TestFixtureCore<TEntryPoint> : IAsyncLifetime
 
     public async Task InitializeAsync()
     {
+        await Fixture.EnsureInitializedAsync();
         await InitPostgresAsync();
     }
 
@@ -539,24 +719,6 @@ public class TestFixtureCore<TEntryPoint> : IAsyncLifetime
     private async Task InitPostgresAsync()
     {
         var postgresOptions = Fixture.ServiceProvider.GetService<PostgresOptions>();
-        var persistOptions = Fixture.ServiceProvider.GetService<PersistMessageOptions>();
-
-        if (!string.IsNullOrEmpty(persistOptions?.ConnectionString))
-        {
-            PersistDbConnection = new NpgsqlConnection(persistOptions.ConnectionString);
-            await PersistDbConnection.OpenAsync();
-
-            using var scope = Fixture.ServiceProvider.CreateScope();
-            var dbContext = scope.ServiceProvider.GetRequiredService<PersistMessageDbContext>();
-            await dbContext.Database.EnsureCreatedAsync();
-
-            await Fixture.PersistMessageBackgroundService.StartAsync(Fixture.CancellationTokenSource.Token);
-
-            _reSpawnerPersistDb = await Respawner.CreateAsync(
-                PersistDbConnection,
-                new RespawnerOptions { DbAdapter = DbAdapter.Postgres }
-            );
-        }
 
         if (!string.IsNullOrEmpty(postgresOptions?.ConnectionString) && _dbContextType != null)
         {
@@ -581,13 +743,6 @@ public class TestFixtureCore<TEntryPoint> : IAsyncLifetime
 
     private async Task ResetPostgresAsync()
     {
-        if (PersistDbConnection is not null)
-        {
-            await _reSpawnerPersistDb.ResetAsync(PersistDbConnection);
-
-            await Fixture.PersistMessageBackgroundService.StopAsync(Fixture.CancellationTokenSource.Token);
-        }
-
         if (DefaultDbConnection is not null)
         {
             await _reSpawnerDefaultDb.ResetAsync(DefaultDbConnection);

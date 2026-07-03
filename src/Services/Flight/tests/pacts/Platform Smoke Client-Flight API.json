@@ -1,0 +1,41 @@
+{
+  "consumer": {
+    "name": "Platform Smoke Client"
+  },
+  "interactions": [
+    {
+      "description": "A request for the flight service health page",
+      "pending": false,
+      "request": {
+        "method": "GET",
+        "path": "/"
+      },
+      "response": {
+        "body": {
+          "content": "Flight.Api.Contract",
+          "contentType": "text/plain;charset=utf-8",
+          "encoded": false
+        },
+        "headers": {
+          "Content-Type": [
+            "text/plain;charset=utf-8"
+          ]
+        },
+        "status": 200
+      },
+      "type": "Synchronous/HTTP"
+    }
+  ],
+  "metadata": {
+    "pactRust": {
+      "ffi": "0.4.27",
+      "models": "1.2.8"
+    },
+    "pactSpecification": {
+      "version": "4.0"
+    }
+  },
+  "provider": {
+    "name": "Flight API"
+  }
+}

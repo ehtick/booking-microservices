@@ -4,11 +4,10 @@ using BuildingBlocks.Exception;
 using BuildingBlocks.HealthCheck;
 using BuildingBlocks.Jwt;
 using BuildingBlocks.Mapster;
-using BuildingBlocks.MassTransit;
+using BuildingBlocks.Wolverine;
 using BuildingBlocks.Mongo;
 using BuildingBlocks.OpenApi;
 using BuildingBlocks.OpenTelemetryCollector;
-using BuildingBlocks.PersistMessageProcessor;
 using BuildingBlocks.ProblemDetails;
 using BuildingBlocks.Web;
 using Figgle;
@@ -47,7 +46,6 @@ public static class InfrastructureExtensions
         var appOptions = builder.Services.GetOptions<AppOptions>(nameof(AppOptions));
         Console.WriteLine(FiggleFonts.Standard.Render(appOptions.Name));
 
-        builder.AddPersistMessageProcessor(nameof(PersistMessage));
         builder.AddCustomDbContext<PassengerDbContext>(nameof(Passenger));
         builder.AddMongoDbContext<PassengerReadDbContext>();
 
@@ -60,7 +58,7 @@ public static class InfrastructureExtensions
         builder.Services.AddProblemDetails();
         builder.Services.AddCustomMapster(typeof(PassengerRoot).Assembly);
         builder.Services.AddHttpContextAccessor();
-        builder.Services.AddCustomMassTransit(env, TransportType.RabbitMq, typeof(PassengerRoot).Assembly);
+        builder.AddCustomWolverine(env, TransportType.RabbitMq, nameof(Passenger), typeof(PassengerRoot).Assembly);
 
         builder.Services.AddGrpc(
             options =>
@@ -87,7 +85,11 @@ public static class InfrastructureExtensions
         app.UseCorrelationId();
         app.UseMigration<PassengerDbContext>();
         app.MapGrpcService<PassengerGrpcServices>();
-        app.MapGet("/", x => x.Response.WriteAsync(appOptions.Name));
+        app.MapGet("/", async x =>
+        {
+            x.Response.ContentType = "text/plain;charset=utf-8";
+            await x.Response.WriteAsync(appOptions.Name);
+        });
 
         if (env.IsDevelopment())
         {

@@ -4,11 +4,10 @@ using BuildingBlocks.Exception;
 using BuildingBlocks.HealthCheck;
 using BuildingBlocks.Jwt;
 using BuildingBlocks.Mapster;
-using BuildingBlocks.MassTransit;
+using BuildingBlocks.Wolverine;
 using BuildingBlocks.Mongo;
 using BuildingBlocks.OpenApi;
 using BuildingBlocks.OpenTelemetryCollector;
-using BuildingBlocks.PersistMessageProcessor;
 using BuildingBlocks.ProblemDetails;
 using BuildingBlocks.Web;
 using Figgle;
@@ -54,8 +53,6 @@ public static class InfrastructureExtensions
         builder.AddCustomDbContext<FlightDbContext>(nameof(Flight));
         builder.Services.AddScoped<IDataSeeder, FlightDataSeeder>();
         builder.AddMongoDbContext<FlightReadDbContext>();
-        builder.AddPersistMessageProcessor(nameof(PersistMessage));
-
         builder.Services.AddEndpointsApiExplorer();
         builder.Services.AddJwt();
         builder.Services.AddAspnetOpenApi();
@@ -63,7 +60,7 @@ public static class InfrastructureExtensions
         builder.Services.AddValidatorsFromAssembly(typeof(FlightRoot).Assembly);
         builder.Services.AddCustomMapster(typeof(FlightRoot).Assembly);
         builder.Services.AddHttpContextAccessor();
-        builder.Services.AddCustomMassTransit(env, TransportType.RabbitMq, typeof(FlightRoot).Assembly);
+        builder.AddCustomWolverine(env, TransportType.RabbitMq, nameof(Flight), typeof(FlightRoot).Assembly);
 
         builder.Services.AddGrpc(options =>
         {
@@ -91,7 +88,11 @@ public static class InfrastructureExtensions
         app.UseMigration<FlightDbContext>();
         app.MapGrpcService<FlightGrpcServices>();
 
-        app.MapGet("/", x => x.Response.WriteAsync(appOptions.Name));
+        app.MapGet("/", async x =>
+        {
+            x.Response.ContentType = "text/plain;charset=utf-8";
+            await x.Response.WriteAsync(appOptions.Name);
+        });
 
         if (env.IsDevelopment())
         {
