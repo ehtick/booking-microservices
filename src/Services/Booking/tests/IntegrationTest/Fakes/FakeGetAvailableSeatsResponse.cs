@@ -4,7 +4,6 @@ using Flight;
 namespace Integration.Test.Fakes;
 
 using System;
-using MassTransit;
 
 public static class FakeGetAvailableSeatsResponse
 {

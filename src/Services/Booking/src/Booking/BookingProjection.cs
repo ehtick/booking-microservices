@@ -9,7 +9,6 @@ namespace Booking;
 
 using Booking.Features.CreatingBook.V1;
 using Booking.Models;
-using MassTransit;
 
 public class BookingProjection : IProjectionProcessor
 {

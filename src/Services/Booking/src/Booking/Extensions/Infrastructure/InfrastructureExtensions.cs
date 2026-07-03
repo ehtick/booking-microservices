@@ -4,11 +4,10 @@ using BuildingBlocks.EventStoreDB;
 using BuildingBlocks.HealthCheck;
 using BuildingBlocks.Jwt;
 using BuildingBlocks.Mapster;
-using BuildingBlocks.MassTransit;
+using BuildingBlocks.Wolverine;
 using BuildingBlocks.Mongo;
 using BuildingBlocks.OpenApi;
 using BuildingBlocks.OpenTelemetryCollector;
-using BuildingBlocks.PersistMessageProcessor;
 using BuildingBlocks.ProblemDetails;
 using BuildingBlocks.Web;
 using Figgle;
@@ -45,7 +44,6 @@ public static class InfrastructureExtensions
 
         Console.WriteLine(FiggleFonts.Standard.Render(appOptions.Name));
 
-        builder.AddPersistMessageProcessor(nameof(PersistMessage));
         builder.AddMongoDbContext<BookingReadDbContext>();
 
         builder.Services.AddEndpointsApiExplorer();
@@ -57,7 +55,7 @@ public static class InfrastructureExtensions
         builder.Services.AddValidatorsFromAssembly(typeof(BookingRoot).Assembly);
         builder.Services.AddProblemDetails();
         builder.Services.AddCustomMapster(typeof(BookingRoot).Assembly);
-        builder.Services.AddCustomMassTransit(env, TransportType.RabbitMq, typeof(BookingRoot).Assembly);
+        builder.AddCustomWolverine(env, TransportType.RabbitMq, nameof(Booking), typeof(BookingRoot).Assembly);
         builder.Services.AddTransient<AuthHeaderHandler>();
 
         // ref: https://github.com/oskardudycz/EventSourcing.NetCore/tree/main/Sample/EventStoreDB/ECommerce
@@ -82,7 +80,11 @@ public static class InfrastructureExtensions
 
         app.UseCustomProblemDetails();
         app.UseCorrelationId();
-        app.MapGet("/", x => x.Response.WriteAsync(appOptions.Name));
+        app.MapGet("/", async x =>
+        {
+            x.Response.ContentType = "text/plain;charset=utf-8";
+            await x.Response.WriteAsync(appOptions.Name);
+        });
 
         if (env.IsDevelopment())
         {

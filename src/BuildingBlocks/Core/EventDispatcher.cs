@@ -1,10 +1,12 @@
 using System.Security.Claims;
+using System.Text.Json;
 using BuildingBlocks.Core.Event;
-using BuildingBlocks.PersistMessageProcessor;
 using BuildingBlocks.Web;
+using BuildingBlocks.Wolverine;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
+using global::Wolverine;
 using MessageEnvelope = BuildingBlocks.Core.Event.MessageEnvelope;
 
 namespace BuildingBlocks.Core;
@@ -13,7 +15,7 @@ public sealed class EventDispatcher(
     IServiceScopeFactory serviceScopeFactory,
     IEventMapper eventMapper,
     ILogger<EventDispatcher> logger,
-    IPersistMessageProcessor persistMessageProcessor,
+    IMessageBus messageBus,
     IHttpContextAccessor httpContextAccessor
 )
     : IEventDispatcher
@@ -30,11 +32,12 @@ public sealed class EventDispatcher(
 
             async Task PublishIntegrationEvent(IReadOnlyList<IIntegrationEvent> integrationEvents)
             {
+                var deliveryOptions = BuildDeliveryOptions();
+
                 foreach (var integrationEvent in integrationEvents)
                 {
-                    await persistMessageProcessor.PublishMessageAsync(
-                        new MessageEnvelope(integrationEvent, SetHeaders()),
-                        cancellationToken);
+                    cancellationToken.ThrowIfCancellationRequested();
+                    await messageBus.PublishAsync(integrationEvent, deliveryOptions);
                 }
             }
 
@@ -59,9 +62,15 @@ public sealed class EventDispatcher(
                 var internalMessages = await MapDomainEventToInternalCommandAsync(events as IReadOnlyList<IDomainEvent>)
                     .ConfigureAwait(false);
 
+                var deliveryOptions = BuildDeliveryOptions();
+
                 foreach (var internalMessage in internalMessages)
                 {
-                    await persistMessageProcessor.AddInternalMessageAsync(internalMessage, cancellationToken);
+                    await messageBus.SendAsync(
+                        new DurableInternalCommand(
+                            internalMessage.GetType().ToString(),
+                            JsonSerializer.Serialize(internalMessage, internalMessage.GetType())),
+                        deliveryOptions);
                 }
             }
         }
@@ -151,5 +160,17 @@ public sealed class EventDispatcher(
         headers.Add("UserName", httpContextAccessor?.HttpContext?.User?.FindFirstValue(ClaimTypes.Name));
 
         return headers;
+    }
+
+    private DeliveryOptions BuildDeliveryOptions()
+    {
+        var deliveryOptions = new DeliveryOptions();
+
+        foreach (var header in SetHeaders())
+        {
+            deliveryOptions.WithHeader(header.Key, header.Value?.ToString() ?? string.Empty);
+        }
+
+        return deliveryOptions;
     }
 }

@@ -3,7 +3,9 @@ using BuildingBlocks.Core.Event;
 using BuildingBlocks.Core.Model;
 using BuildingBlocks.Web;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Metadata;
 using Microsoft.EntityFrameworkCore.Storage;
+using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Microsoft.Extensions.Logging;
 using IsolationLevel = System.Data.IsolationLevel;
 
@@ -25,6 +27,7 @@ public abstract class AppDbContextBase : DbContext, IDbContext
 
     protected override void OnModelCreating(ModelBuilder builder)
     {
+        NormalizeDateTimeProperties(builder);
     }
 
     public IExecutionStrategy CreateExecutionStrategy() => Database.CreateExecutionStrategy();
@@ -177,5 +180,38 @@ public abstract class AppDbContextBase : DbContext, IDbContext
         {
             throw new System.Exception("try for find IAggregate", ex);
         }
+    }
+
+    private static void NormalizeDateTimeProperties(ModelBuilder builder)
+    {
+        var dateTimeConverter = new ValueConverter<DateTime, DateTime>(
+            value => NormalizeDateTime(value),
+            value => NormalizeDateTime(value));
+
+        var nullableDateTimeConverter = new ValueConverter<DateTime?, DateTime?>(
+            value => value.HasValue ? NormalizeDateTime(value.Value) : value,
+            value => value.HasValue ? NormalizeDateTime(value.Value) : value);
+
+        foreach (var entityType in builder.Model.GetEntityTypes())
+        {
+            foreach (var property in entityType.GetProperties())
+            {
+                if (property.ClrType == typeof(DateTime))
+                {
+                    property.SetValueConverter(dateTimeConverter);
+                }
+                else if (property.ClrType == typeof(DateTime?))
+                {
+                    property.SetValueConverter(nullableDateTimeConverter);
+                }
+            }
+        }
+    }
+
+    private static DateTime NormalizeDateTime(DateTime value)
+    {
+        return value.Kind == DateTimeKind.Unspecified
+            ? value
+            : DateTime.SpecifyKind(value, DateTimeKind.Unspecified);
     }
 }

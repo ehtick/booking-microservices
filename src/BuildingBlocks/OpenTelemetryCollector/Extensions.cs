@@ -5,8 +5,6 @@ using BuildingBlocks.OpenTelemetryCollector.CoreDiagnostics.Query;
 using BuildingBlocks.OpenTelemetryCollector.DiagnosticsProvider;
 using BuildingBlocks.Web;
 using Grafana.OpenTelemetry;
-using MassTransit.Logging;
-using MassTransit.Monitoring;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http.Features;
 using Microsoft.Extensions.DependencyInjection;
@@ -116,7 +114,6 @@ public static class Extensions
                     .AddHttpClientInstrumentation()
                     .AddProcessInstrumentation()
                     .AddRuntimeInstrumentation()
-                    .AddMeter(InstrumentationOptions.MeterName)
                     .AddMeter(observabilityOptions.InstrumentationName)
                     // metrics provides by ASP.NET Core in .NET 8
                     .AddView(
@@ -163,7 +160,6 @@ public static class Extensions
                         instrumentationOptions.RecordException = true;
                     })
                     .AddEntityFrameworkCoreInstrumentation()
-                    .AddSource(DiagnosticHeaders.DefaultListenerName)
                     .AddNpgsql()
                     // `AddSource` for adding custom activity sources
                     .AddSource(observabilityOptions.InstrumentationName)

@@ -6,7 +6,7 @@
     </div>
 </div>
 
-> 🚀 **A practical microservices with the latest technologies and architectures like Vertical Slice Architecture, Event Sourcing, CQRS, DDD, gRpc, MongoDB, RabbitMq, Masstransit, and Aspire in .Net 10.**
+> 🚀 **A practical microservices with the latest technologies and architectures like Vertical Slice Architecture, Event Sourcing, CQRS, DDD, gRpc, MongoDB, RabbitMq, Wolverine, PactNet, and Aspire in .Net 10.**
 
 ## You can find other version of this project here:
 - [Booking with Modular Monolith Architecture](https://github.com/meysamhadeli/booking-modular-monolith)
@@ -46,16 +46,18 @@
 
 - :sparkle: Using `Vertical Slice Architecture` for `architecture` level.
 - :sparkle: Using `Domain Driven Design (DDD)` to implement all `business logic`.
-- :sparkle: Using `Rabbitmq` on top of `Masstransit` for `Event Driven Architecture`.
+- :sparkle: Using `Rabbitmq` on top of `Wolverine` for `Event Driven Architecture`.
 - :sparkle: Using `gRPC` for `internal communication`.
 - :sparkle: Using `CQRS` implementation with `MediatR` library.
 - :sparkle: Using `Postgres` for `write side` database.
 - :sparkle: Using `MongoDB` for `read side` database.
 - :sparkle: Using `Event Store` for `write side` of Booking Microservice/Module to store all `historical change` of aggregate.
-- :sparkle: Using `Inbox Pattern` for ensuring message idempotency for receiver and `Exactly once Delivery`.
-- :sparkle: Using `Outbox Pattern` for ensuring no message is lost and there is at `At Least One Delivery`.
+- :sparkle: Using `Wolverine` durable `Inbox Pattern` for ensuring message idempotency for receiver and `Exactly once Delivery`.
+- :sparkle: Using `Wolverine` durable `Outbox Pattern` for ensuring no message is lost and there is at `At Least One Delivery`.
+- :sparkle: Using `Wolverine` durable local queues for `internal commands` and asynchronous in-process workflows.
 - :sparkle: Using `Unit Testing` for testing small units and mocking our dependencies with `Nsubstitute`.
 - :sparkle: Using `End-To-End Testing` and `Integration Testing` for testing `features` with all dependencies using `testcontainers`.
+- :sparkle: Using `Contract Testing` with `PactNet` for verifying producer and consumer compatibility.
 - :sparkle: Using `Fluent Validation` and a `Validation Pipeline Behaviour` on top of `MediatR`.
 - :sparkle: Using `Minimal API` for all endpoints.
 - :sparkle: Using `AspNetCore OpenApi` for `generating` built-in support `OpenAPI documentation` in ASP.NET Core.
@@ -78,7 +80,7 @@
 - ✔️ **[`MVC Versioning API`](https://github.com/microsoft/aspnet-api-versioning)** - Set of libraries which add service API versioning to ASP.NET Web API, OData with ASP.NET Web API, and ASP.NET Core.
 - ✔️ **[`EF Core`](https://github.com/dotnet/efcore)** - Modern object-database mapper for .NET. It supports LINQ queries, change tracking, updates, and schema migrations.
 - ✔️ **[`AspNetCore OpenApi`](https://learn.microsoft.com/en-us/aspnet/core/fundamentals/openapi/aspnetcore-openapi)** - Provides built-in support for OpenAPI document generation in ASP.NET Core.
-- ✔️ **[`Masstransit`](https://github.com/MassTransit/MassTransit)** - Distributed Application Framework for .NET.
+- ✔️ **[`Wolverine`](https://wolverinefx.io/)** - Durable messaging and local workflow library for .NET with RabbitMQ transport, inbox/outbox support, and local queues.
 - ✔️ **[`MediatR`](https://github.com/jbogard/MediatR)** - Simple, unambitious mediator implementation in .NET.
 - ✔️ **[`FluentValidation`](https://github.com/FluentValidation/FluentValidation)** - Popular .NET validation library for building strongly-typed validation rules.
 - ✔️ **[`Scalar`](https://github.com/scalar/scalar/tree/main/packages/scalar.aspnetcore)** - Scalar provides an easy way to render beautiful API references based on OpenAPI/Swagger documents.
@@ -100,6 +102,7 @@
 - ✔️ **[`xUnit.net`](https://github.com/xunit/xunit)** - A free, open source, community-focused unit testing tool for the .NET Framework.
 - ✔️ **[`Respawn`](https://github.com/jbogard/Respawn)** - Respawn is a small utility to help in resetting test databases to a clean state.
 - ✔️ **[`Testcontainers`](https://github.com/testcontainers/testcontainers-dotnet)** - Testcontainers for .NET is a library to support tests with throwaway instances of Docker containers.
+- ✔️ **[`PactNet`](https://github.com/pact-foundation/pact-net)** - Contract testing library for verifying consumer-provider compatibility in .NET services.
 - ✔️ **[`K6`](https://github.com/grafana/k6)** - Modern load testing for developers and testers in the DevOps era.
 - ✔️ **[`Aspire`](https://github.com/dotnet/aspire)** - .NET stack for building and orchestrating observable, distributed cloud-native applications.
 
@@ -162,6 +165,8 @@ I used CQRS to decompose my features into small parts that makes our application
 - It gives us better separation of concerns and cross-cutting concern (with help of mediatr behavior pipelines), instead of bloated service classes doing many things.
 
 Using the CQRS pattern, we cut each business functionality into vertical slices, for each of these slices we group classes (see [technical folders structure](http://www.kamilgrzybek.com/design/feature-folders)) specific to that feature together (command, handlers, infrastructure, repository, controllers, etc). In our CQRS pattern each command/query handler is a separate slice. This is where you can reduce coupling between layers. Each handler can be a separated code unit, even copy/pasted. Thanks to that, we can tune down the specific method to not follow general conventions (e.g. use custom SQL query or even different storage). In a traditional layered architecture, when we change the core generic mechanism in one layer, it can impact all methods.
+
+For asynchronous messaging, this project uses `Wolverine` with `RabbitMQ` transport and `PostgreSQL` durability. `Wolverine` handles durable inbox/outbox delivery across services and also persists local `internal commands` through durable local queues, so integration events and in-process asynchronous workflows follow the same messaging model.
 
 
 ## Development Setup
